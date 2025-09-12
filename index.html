@@ -159,7 +159,7 @@ downloadBtn.onclick = async () => {
     a.click();
     a.remove();
 
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 10000));
   }
   progressText.textContent = "All download requests sent. Check your downloads.";
   progressBar.style.width = "100%";
