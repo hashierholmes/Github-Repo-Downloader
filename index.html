@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Github Repo Downloader</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body {
+    background-color: #1e1e1e;
+    color: #e5e5e5;
+  }
+  .card { background-color: #2a2a2a; }
+  .btn-primary { background-color: #4b5563; transition: background-color 0.2s; }
+  .btn-primary:hover { background-color: #6b7280; }
+  .btn-success { background-color: #374151; }
+  .btn-success:hover { background-color: #4b5563; }
+  input, .input {
+    background-color: #e5e5e5;
+    color: #2a2a2a;
+    border-color: #374151;
+  }
+  input:focus {
+    outline: none;
+    border-color: #6b7280;
+  }
+</style>
+</head>
+<body class="p-6 font-sans">
+  <div class="max-w-md mx-auto card shadow rounded-2xl p-6">
+    <h1 class="text-3xl font-bold mb-6 text-center text-silver-200">Github Repo Downloader</h1>
+
+    <div class="mb-6 grid grid-cols-1 gap-4">
+      <input id="username" placeholder="Github Username" class="border p-2 rounded input" />
+      <input id="token" type="password" placeholder="Classic Token (repo scope)" class="border p-2 rounded input" />
+    </div>
+
+    <button id="load" class="w-full btn-primary text-white py-2 rounded mb-4">Load Repositories</button>
+
+    <div id="reposSection" class="hidden">
+      <div class="flex justify-between mb-4 flex-wrap gap-2 items-center">
+        <div class="flex items-center gap-4">
+          <input id="search" placeholder="Search repositories..." class="border p-2 rounded input flex-1 min-w-[200px]" />
+          <span id="repoCount" class="text-gray-300 text-sm"></span>
+        </div>
+        <div class="flex items-center gap-4">
+          <label class="flex items-center gap-2">
+            <input type="checkbox" id="selectAll" class="form-checkbox" />
+            <span class="text-sm">Select All</span>
+          </label>
+          <button id="download" class="btn-success text-white px-4 py-2 rounded">Download Selected</button>
+        </div>
+      </div>
+      <div id="repos" class="divide-y divide-gray-600"></div>
+
+      <div id="progressBox" class="mt-6 hidden">
+        <div class="text-center mb-2 text-sm text-gray-300" id="progressText"></div>
+        <div class="w-full bg-gray-700 rounded-full h-3">
+          <div id="progressBar" class="bg-gray-400 h-3 rounded-full" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const loadBtn = document.getElementById('load');
+const reposDiv = document.getElementById('repos');
+const reposSection = document.getElementById('reposSection');
+const searchBox = document.getElementById('search');
+const downloadBtn = document.getElementById('download');
+const selectAll = document.getElementById('selectAll');
+const progressBox = document.getElementById('progressBox');
+const progressText = document.getElementById('progressText');
+const progressBar = document.getElementById('progressBar');
+const repoCount = document.getElementById('repoCount');
+
+let allRepos = [];
+
+async function fetchRepos(token) {
+  let page = 1, all = [];
+  while (true) {
+    const res = await fetch(`https://api.github.com/user/repos?per_page=100&page=${page}&visibility=all&affiliation=owner`, {
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: 'application/vnd.github.v3+json'
+      }
+    });
+    if (!res.ok) throw new Error(`GitHub API error ${res.status}`);
+    const batch = await res.json();
+    if (batch.length === 0) break;
+    all = all.concat(batch);
+    page++;
+  }
+  return all;
+}
+
+function updateCount() {
+  repoCount.textContent = `Total Repositories: ${allRepos.length}`;
+}
+
+function render(filter = "") {
+  reposDiv.innerHTML = "";
+  const lower = filter.toLowerCase();
+  const filtered = allRepos.filter(r => r.name.toLowerCase().includes(lower));
+  filtered.forEach(r => {
+    const row = document.createElement('div');
+    row.className = "flex items-center justify-between p-2 hover:bg-gray-700 rounded";
+    row.innerHTML = `
+      <label class="flex items-center space-x-2">
+        <input type="checkbox" class="repo-check" data-name="${r.name}" data-branch="${r.default_branch}">
+        <span class="font-medium">${r.name}</span>
+      </label>
+      <span class="text-sm text-gray-400">${r.private ? "Private" : "Public"}</span>
+    `;
+    reposDiv.appendChild(row);
+  });
+  repoCount.textContent = `Total Repositories: ${filtered.length} / ${allRepos.length}`;
+}
+
+loadBtn.onclick = async () => {
+  const token = document.getElementById('token').value.trim();
+  if (!token) return alert("Enter a classic token with repo scope.");
+  loadBtn.disabled = true;
+  loadBtn.textContent = "Loading…";
+  try {
+    allRepos = await fetchRepos(token);
+    render();
+    updateCount();
+    reposSection.classList.remove('hidden');
+  } catch (err) { alert(err.message); }
+  loadBtn.disabled = false;
+  loadBtn.textContent = "Load Repositories";
+};
+
+searchBox.oninput = () => render(searchBox.value);
+selectAll.onchange = () => {
+  document.querySelectorAll('.repo-check').forEach(cb => cb.checked = selectAll.checked);
+};
+
+downloadBtn.onclick = async () => {
+  const user = document.getElementById('username').value.trim();
+  const selected = Array.from(document.querySelectorAll('.repo-check:checked')).map(cb => ({
+    name: cb.dataset.name,
+    branch: cb.dataset.branch
+  }));
+  if (!user || !selected.length) return alert("Enter username and select repositories.");
+
+  progressBox.classList.remove('hidden');
+  let i = 0;
+  for (const {name, branch} of selected) {
+    i++;
+    progressText.textContent = `Preparing ${i} of ${selected.length}: ${name}`;
+    progressBar.style.width = `${Math.round((i-1)/selected.length*100)}%`;
+
+    const a = document.createElement('a');
+    a.href = `https://github.com/${user}/${name}/archive/refs/heads/${branch}.zip`;
+    a.download = `${name}-${branch}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  progressText.textContent = "All download requests sent. Check your downloads.";
+  progressBar.style.width = "100%";
+};
+</script>
+</body>
+</html>
